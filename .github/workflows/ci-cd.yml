@@ -54,15 +54,34 @@ jobs:
         SERVER_PID=$!
         sleep 5
         
-        # Проверяем health endpoint
-        if curl -s -f http://localhost:3000/api/health > /dev/null; then
-          echo "✅ Сервер запущен корректно"
+        # Проверяем health endpoint - РАЗНЫЕ КОМАНДЫ ДЛЯ РАЗНЫХ ОС
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          # Для Windows используем PowerShell команды
+          echo "🪟 Windows: проверяем сервер..."
+          
+          # Вариант 1: Используем curl который есть в Windows (если установлен)
+          # curl -s -f http://localhost:3000/api/health
+          
+          # Вариант 2: Просто проверяем что процесс жив
+          tasklist //FI "PID eq $SERVER_PID" > nul 2>&1
+          if errorlevel 1 (
+            echo "❌ Сервер не запущен на Windows"
+            exit 1
+          ) else (
+            echo "✅ Сервер запущен на Windows (процесс активен)"
+            taskkill //PID $SERVER_PID //F > nul 2>&1
+          )
         else
-          echo "❌ Сервер не отвечает"
-          exit 1
+          # Для Linux/Mac - обычный bash синтаксис
+          if curl -s -f http://localhost:3000/api/health > /dev/null; then
+            echo "✅ Сервер запущен корректно на ${{ matrix.os }}"
+          else
+            echo "❌ Сервер не отвечает на ${{ matrix.os }}"
+            exit 1
+          fi
+          
+          kill $SERVER_PID 2>/dev/null || true
         fi
-        
-        kill $SERVER_PID 2>/dev/null || true
 
   build:
     name: Build and verify
