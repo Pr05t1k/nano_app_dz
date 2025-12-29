@@ -49,40 +49,51 @@ jobs:
     
     - name: Test server startup
       run: |
-        # Запускаем сервер в фоне
+        echo "🔄 Тестирование запуска сервера на ${{ matrix.os }} с Node ${{ matrix.node-version }}"
+        
+        # Запускаем сервер
         npm start &
         SERVER_PID=$!
-        sleep 5
         
-        # Проверяем health endpoint - РАЗНЫЕ КОМАНДЫ ДЛЯ РАЗНЫХ ОС
+        # Разное время ожидания для разных ОС
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          # Для Windows используем PowerShell команды
-          echo "🪟 Windows: проверяем сервер..."
-          
-          # Вариант 1: Используем curl который есть в Windows (если установлен)
-          # curl -s -f http://localhost:3000/api/health
-          
-          # Вариант 2: Просто проверяем что процесс жив
-          tasklist //FI "PID eq $SERVER_PID" > nul 2>&1
-          if errorlevel 1 (
-            echo "❌ Сервер не запущен на Windows"
-            exit 1
-          ) else (
-            echo "✅ Сервер запущен на Windows (процесс активен)"
-            taskkill //PID $SERVER_PID //F > nul 2>&1
-          )
+          sleep 8  # Windows нужно больше времени
         else
-          # Для Linux/Mac - обычный bash синтаксис
-          if curl -s -f http://localhost:3000/api/health > /dev/null; then
-            echo "✅ Сервер запущен корректно на ${{ matrix.os }}"
+          sleep 4  # Linux/Mac быстрее
+        fi
+        
+        # ПРОВЕРКА ДЛЯ WINDOWS
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          echo "Проверяем Windows сервер..."
+          # Используем native Windows команды
+          if tasklist //FI "PID eq $SERVER_PID" > nul 2>&1; then
+            echo "✅ Windows: серверный процесс активен"
+            # Останавливаем процесс
+            taskkill //PID $SERVER_PID //F > nul 2>&1 || echo "Процесс уже завершен"
+            exit 0
           else
-            echo "❌ Сервер не отвечает на ${{ matrix.os }}"
+            echo "❌ Windows: серверный процесс не найден"
             exit 1
           fi
-          
-          kill $SERVER_PID 2>/dev/null || true
+        
+        # ПРОВЕРКА ДЛЯ LINUX/MAC
+        else
+          echo "Проверяем ${{ matrix.os }} сервер..."
+          # Проверяем доступность API
+          if curl -s -f http://localhost:3000/api/health > /dev/null 2>&1; then
+            echo "✅ ${{ matrix.os }}: сервер отвечает на health check"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 0
+          else
+            echo "❌ ${{ matrix.os }}: сервер не ответил на health check"
+            # Проверяем хотя бы что процесс жив
+            if kill -0 $SERVER_PID 2>/dev/null; then
+              echo "⚠️  Но процесс все еще жив, возможно проблема с API"
+            fi
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
         fi
-
   build:
     name: Build and verify
     runs-on: ubuntu-latest
